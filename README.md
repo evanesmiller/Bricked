@@ -4,7 +4,7 @@ A web app that transforms real-world objects into LEGO-style buildable models. U
 
 ## How it works
 
-1. **Upload** – User uploads 1–20 images of an object from different angles
+1. **Upload** – User uploads 4-8 images of an object from different angles
 2. **Segment** – YOLO isolates the object from the background in each image
 3. **Reconstruct** – OpenCV Structure-from-Motion estimates a coarse 3D point cloud
 4. **Voxelize** – Open3D converts the 3D structure into a cube grid
