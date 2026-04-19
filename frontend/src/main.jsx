@@ -37,6 +37,7 @@ function App() {
   const [run, setRun] = useState(null);
   const [error, setError] = useState("");
   const [isUploading, setIsUploading] = useState(false);
+  const [stage, setStage] = useState("");
 
   const previews = useMemo(
     () =>
@@ -54,20 +55,39 @@ function App() {
   const canUpload = files.length >= MIN_IMAGES && files.length <= MAX_IMAGES && !isUploading;
 
   function updateFiles(nextFiles) {
-    const imageFiles = Array.from(nextFiles).filter((file) => file.type.startsWith("image/"));
+    const incoming = Array.from(nextFiles).filter(
+      (f) => f.type.startsWith("image/") || /\.(heic|heif)$/i.test(f.name),
+    );
     setRun(null);
     setError("");
 
-    if (imageFiles.length > MAX_IMAGES) {
-      setError(`Choose ${MIN_IMAGES}-${MAX_IMAGES} images for this pass.`);
-      setFiles(imageFiles.slice(0, MAX_IMAGES));
-      return;
-    }
+    setFiles((prev) => {
+      const existingKeys = new Set(prev.map((f) => `${f.name}-${f.size}`));
+      const merged = [...prev, ...incoming.filter((f) => !existingKeys.has(`${f.name}-${f.size}`))];
+      const capped = merged.slice(0, MAX_IMAGES);
 
-    setFiles(imageFiles);
-    if (imageFiles.length > 0 && imageFiles.length < MIN_IMAGES) {
-      setError(`Add ${MIN_IMAGES - imageFiles.length} more image${MIN_IMAGES - imageFiles.length === 1 ? "" : "s"} to start.`);
-    }
+      if (merged.length > MAX_IMAGES) {
+        setError(`Choose ${MIN_IMAGES}–${MAX_IMAGES} images for this pass.`);
+      } else if (capped.length > 0 && capped.length < MIN_IMAGES) {
+        setError(`Add ${MIN_IMAGES - capped.length} more image${MIN_IMAGES - capped.length === 1 ? "" : "s"} to start.`);
+      } else {
+        setError("");
+      }
+
+      return capped;
+    });
+  }
+
+  function removeFile(index) {
+    setFiles((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      if (next.length > 0 && next.length < MIN_IMAGES) {
+        setError(`Add ${MIN_IMAGES - next.length} more image${MIN_IMAGES - next.length === 1 ? "" : "s"} to start.`);
+      } else {
+        setError("");
+      }
+      return next;
+    });
   }
 
   async function uploadImages() {
@@ -80,19 +100,28 @@ function App() {
     setError("");
 
     try {
-      const response = await fetch(`${API_BASE_URL}/api/uploads/runs`, {
+      setStage("Uploading images...");
+      const uploadRes = await fetch(`${API_BASE_URL}/api/uploads/runs`, {
         method: "POST",
         body: formData,
       });
+      const uploadData = await uploadRes.json().catch(() => null);
+      if (!uploadRes.ok) throw new Error(uploadData?.detail ?? "Upload failed.");
 
-      const data = await response.json().catch(() => null);
-      if (!response.ok) {
-        throw new Error(data?.detail ?? "Upload failed. Check the API server and try again.");
-      }
+      setRun(uploadData);
 
-      setRun(data);
-    } catch (uploadError) {
-      setError(uploadError.message);
+      setStage("Segmenting objects...");
+      const segRes = await fetch(`${API_BASE_URL}/api/runs/${uploadData.run_id}/segment`, {
+        method: "POST",
+      });
+      const segData = await segRes.json().catch(() => null);
+      if (!segRes.ok) throw new Error(segData?.detail ?? "Segmentation failed.");
+
+      setRun((prev) => ({ ...prev, ...segData }));
+      setStage("Done");
+    } catch (err) {
+      setError(err.message);
+      setStage("");
     } finally {
       setIsUploading(false);
     }
@@ -128,11 +157,13 @@ function App() {
               inputRef={inputRef}
               isUploading={isUploading}
               onFiles={updateFiles}
+              onRemove={removeFile}
               onUpload={uploadImages}
               previews={previews}
               run={run}
+              stage={stage}
             />
-            <PipelinePanel run={run} />
+            <PipelinePanel run={run} stage={stage} isUploading={isUploading} />
           </div>
         </div>
       </section>
@@ -175,7 +206,7 @@ function App() {
   );
 }
 
-function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, onUpload, previews, run }) {
+function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, onRemove, onUpload, previews, run, stage }) {
   return (
     <section className="rounded-md border border-cyan-200/20 bg-[#06202a]/85 p-5 shadow-abyss backdrop-blur">
       <div className="flex flex-wrap items-start justify-between gap-4">
@@ -208,10 +239,10 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
       <input
         ref={inputRef}
         type="file"
-        accept="image/jpeg,image/png,image/webp"
+        accept="image/jpeg,image/png,image/webp,image/heic,image/heif,.heic,.heif"
         multiple
         className="hidden"
-        onChange={(event) => onFiles(event.target.files)}
+        onChange={(event) => { onFiles(event.target.files); event.target.value = ""; }}
       />
 
       {error && (
@@ -222,8 +253,14 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
 
       {previews.length > 0 && (
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
-          {previews.map(({ file, url }) => (
-            <figure key={`${file.name}-${file.lastModified}`} className="rounded-md border border-cyan-100/15 bg-[#031318] p-2">
+          {previews.map(({ file, url }, index) => (
+            <figure key={`${file.name}-${file.lastModified}`} className="relative rounded-md border border-cyan-100/15 bg-[#031318] p-2">
+              <button
+                type="button"
+                onClick={() => onRemove(index)}
+                className="absolute right-1 top-1 flex h-5 w-5 items-center justify-center rounded-full bg-rose-600 text-xs font-bold text-white hover:bg-rose-400"
+                aria-label="Remove image"
+              >×</button>
               <img src={url} alt={file.name} className="aspect-square w-full rounded object-cover" />
               <figcaption className="mt-2 min-h-12 text-xs text-slate-300">
                 <span className="block truncate font-medium text-slate-100">{file.name}</span>
@@ -241,11 +278,8 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
           onClick={onUpload}
           type="button"
         >
-          {isUploading ? "Uploading..." : "Create Processing Run"}
+          {isUploading ? stage || "Processing..." : "Generate Lego"}
         </button>
-        <p className="text-sm text-slate-300">
-          {canUpload ? "Ready to store images." : `Select ${MIN_IMAGES}-${MAX_IMAGES} images to continue.`}
-        </p>
       </div>
 
       {run && (
@@ -258,8 +292,20 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
   );
 }
 
-function PipelinePanel({ run }) {
+function PipelinePanel({ run, stage, isUploading }) {
   const steps = ["Upload", "Segment", "Reconstruct", "Voxelize", "LEGO Convert"];
+
+  function getStepStatus(index) {
+    if (index === 0) {
+      if (isUploading && stage === "Uploading images...") return "in-progress";
+      if (run) return "completed";
+    }
+    if (index === 1) {
+      if (isUploading && stage === "Segmenting objects...") return "in-progress";
+      if (run?.segmented_images) return "completed";
+    }
+    return "pending";
+  }
 
   return (
     <aside className="rounded-md border border-teal-200/15 bg-[#04181f]/85 p-5 shadow-abyss backdrop-blur">
@@ -267,19 +313,25 @@ function PipelinePanel({ run }) {
       <h2 className="mt-2 text-2xl font-bold text-white">Pipeline placeholders are surfaced early.</h2>
       <div className="mt-6 space-y-3">
         {steps.map((step, index) => {
-          const isUploaded = Boolean(run) && index === 0;
+          const status = getStepStatus(index);
           return (
             <div key={step} className="flex items-center gap-3 rounded-md border border-cyan-100/10 bg-[#061f27] p-3">
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-black ${
-                  isUploaded ? "bg-emerald-300 text-emerald-950" : "bg-cyan-950 text-cyan-100"
+                  status === "completed"
+                    ? "bg-emerald-300 text-emerald-950"
+                    : status === "in-progress"
+                      ? "bg-amber-300 text-amber-950"
+                      : "bg-cyan-950 text-cyan-100"
                 }`}
               >
                 {index + 1}
               </div>
               <div>
                 <p className="font-semibold text-white">{step}</p>
-                <p className="text-sm text-slate-300">{isUploaded ? "Images stored" : "Coming soon"}</p>
+                <p className="text-sm text-slate-300">
+                  {status === "completed" ? "Completed" : status === "in-progress" ? "In Progress" : "Coming soon"}
+                </p>
               </div>
             </div>
           );
