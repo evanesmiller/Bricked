@@ -312,7 +312,7 @@ function PipelinePanel({ run, stage, isUploading }) {
               <div>
                 <p className="font-semibold text-white">{step}</p>
                 <p className="text-sm text-slate-300">
-                  {status === "completed" ? "Completed" : status === "in-progress" ? "In Progress" : "Coming soon"}
+                  {status === "completed" ? "Completed" : status === "in-progress" ? "In Progress" : "Pending"}
                 </p>
               </div>
             </div>
@@ -529,9 +529,6 @@ function App() {
               <h1 className="mt-3 max-w-4xl text-4xl font-black leading-tight text-white sm:text-6xl">
                 Build a brick-ready model from a ring of photos.
               </h1>
-            </div>
-            <div className="hidden rounded-md border border-cyan-200/30 bg-cyan-950/40 px-4 py-3 text-sm text-cyan-50 backdrop-blur md:block">
-              API: {API_BASE_URL}
             </div>
           </header>
 
