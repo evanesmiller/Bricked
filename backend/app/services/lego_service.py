@@ -4,44 +4,82 @@ Reads the voxel grid, merges adjacent voxels into standard brick types,
 assigns colors, generates a parts list, and stores the final model as GLTF.
 
 Brick types supported: 1x1, 1x2, 1x3, 1x4, 2x2, 2x3, 2x4
-Colors are quantized to the nearest standard LEGO palette color.
+Colors are quantized to the nearest standard LEGO palette color via Euclidean
+distance in RGB space.
 """
+import cv2
 import json
 import io
+import numpy as np
 from datetime import datetime, timezone
 from bson import ObjectId
 from fastapi import HTTPException
 from app.database import get_db, get_gridfs
 
-# Standard LEGO color palette (name → hex)
-LEGO_PALETTE = {
-    "Red":    "#B40000",
-    "Blue":   "#006DB7",
-    "Yellow": "#FFD700",
-    "Green":  "#00852B",
-    "White":  "#FFFFFF",
-    "Black":  "#1B2A34",
-    "Orange": "#FF7000",
-    "Gray":   "#9BA19D",
+# Standard LEGO color palette (name → (hex, R, G, B))
+# 16 classic LEGO colors. Includes Bright Pink so warm flesh-to-magenta tones
+# map correctly instead of falling through to Tan or Red.
+LEGO_PALETTE: dict[str, tuple[str, int, int, int]] = {
+    "Bright Red":       ("#C91A09", 201,  26,   9),
+    "Bright Blue":      ("#0055BF",   0,  85, 191),
+    "Bright Yellow":    ("#F2CD37", 242, 205,  55),
+    "Bright Green":     ("#4B9F4A",  75, 159,  74),
+    "Dark Green":       ("#184632",  24,  70,  50),
+    "White":            ("#FFFFFF", 255, 255, 255),
+    "Black":            ("#05131D",   5,  19,  29),
+    "Bright Orange":    ("#FE8A18", 254, 138,  24),
+    "Medium Stone Gray":("#A0A5A9", 160, 165, 169),
+    "Dark Stone Gray":  ("#6C6E68", 108, 110, 104),
+    "Reddish Brown":    ("#582A12",  88,  42,  18),
+    "Tan":              ("#E4CD9E", 228, 205, 158),
+    "Bright Pink":      ("#FF698F", 255, 105, 143),
+    "Bright Purple":    ("#81007B", 129,   0, 123),
+    "Sand Green":       ("#A0BCAC", 160, 188, 172),
+    "Medium Azure":     ("#36AEBF",  54, 174, 191),
 }
+
+# Pre-compute palette in CIE-LAB for perceptually-uniform nearest-color lookup.
+# LAB separates lightness (L) from chroma (a, b), so White vs Tan vs Gray stay
+# far apart even though their RGB values can be misleadingly close.
+_PALETTE_NAMES = list(LEGO_PALETTE.keys())
+
+def _rgb_to_lab(r: int, g: int, b: int) -> np.ndarray:
+    """Convert a single sRGB pixel to OpenCV's uint8 LAB encoding."""
+    px = np.array([[[r, g, b]]], dtype=np.uint8)
+    return cv2.cvtColor(px, cv2.COLOR_RGB2LAB)[0, 0].astype(np.float32)
+
+_PALETTE_LAB = np.stack([
+    _rgb_to_lab(r, g, b) for _, r, g, b in LEGO_PALETTE.values()
+])  # (16, 3)
 
 # Supported brick footprints (width x depth in stud units)
 BRICK_TYPES = [(2, 4), (2, 3), (2, 2), (1, 4), (1, 3), (1, 2), (1, 1)]
 
 
-def _quantize_color(hex_color: str | None) -> tuple[str, str]:
-    """Return (lego_color_name, hex) closest to the input. Defaults to Gray."""
-    # Extend with real color-distance logic once YOLO provides per-voxel color
-    return "Gray", LEGO_PALETTE["Gray"]
+def _quantize_color(r: int, g: int, b: int) -> tuple[str, str]:
+    """Return (lego_color_name, hex) nearest to (r, g, b) in CIE-LAB space."""
+    query = _rgb_to_lab(r, g, b)
+    diffs = _PALETTE_LAB - query          # (16, 3)
+    idx   = int(np.argmin((diffs ** 2).sum(axis=1)))
+    name  = _PALETTE_NAMES[idx]
+    return name, LEGO_PALETTE[name][0]
 
 
 def _pack_bricks(voxels: list[dict]) -> list[dict]:
     """
     Greedy brick packing: walk the voxel grid layer by layer (Y axis = height),
     try to cover each unfilled cell with the largest brick that fits.
-    Returns a list of brick dicts with position, type, and color.
+
+    Per-brick color is determined by averaging the RGB of all voxels in the
+    brick's footprint, then quantizing to the nearest LEGO palette color.
     """
-    occupied = {(v["x"], v["y"], v["z"]) for v in voxels}
+    # Build a lookup from (x, y, z) → (r, g, b); fall back to gray if absent
+    color_lookup: dict[tuple, tuple[int, int, int]] = {}
+    has_color = "r" in voxels[0] if voxels else False
+    if has_color:
+        for v in voxels:
+            color_lookup[(v["x"], v["y"], v["z"])] = (v["r"], v["g"], v["b"])
+
     filled = set()
     bricks = []
 
@@ -56,7 +94,16 @@ def _pack_bricks(voxels: list[dict]) -> list[dict]:
             for (w, d) in BRICK_TYPES:
                 footprint = {(x + dx, z + dz) for dx in range(w) for dz in range(d)}
                 if footprint.issubset(remaining):
-                    color_name, color_hex = _quantize_color(None)
+                    if has_color:
+                        rgbs = [color_lookup.get((fx, y, fz), (128, 128, 128))
+                                for fx, fz in footprint]
+                        avg_r = int(round(sum(c[0] for c in rgbs) / len(rgbs)))
+                        avg_g = int(round(sum(c[1] for c in rgbs) / len(rgbs)))
+                        avg_b = int(round(sum(c[2] for c in rgbs) / len(rgbs)))
+                        color_name, color_hex = _quantize_color(avg_r, avg_g, avg_b)
+                    else:
+                        color_name, color_hex = "Medium Stone Gray", LEGO_PALETTE["Medium Stone Gray"][0]
+
                     bricks.append({
                         "x": x, "y": y, "z": z,
                         "width": w, "depth": d, "height": 1,

@@ -60,21 +60,26 @@ OPEN_ITERS   = 1      # morphological opening iterations (fin removal)
 
 def _build_voxel_grid(point_list: list[dict]) -> list[dict]:
     """
-    Convert a point cloud (list of {x,y,z} dicts in [-1,1]³) to a simplified,
-    LEGO-ready voxel grid.  Returns integer grid-index dicts {x, y, z}.
+    Convert a point cloud (list of {x,y,z[,r,g,b]} dicts in [-1,1]³) to a
+    simplified, LEGO-ready voxel grid.  Returns integer grid-index dicts
+    {x, y, z, r, g, b}.
     """
     import open3d as o3d
 
     if not point_list:
         return []
 
-    pts   = np.array([[p["x"], p["y"], p["z"]] for p in point_list], dtype=np.float64)
-    n_raw = len(pts)
+    pts      = np.array([[p["x"], p["y"], p["z"]] for p in point_list], dtype=np.float64)
+    has_color = "r" in point_list[0]
+    n_raw    = len(pts)
 
     # ── 1. Statistical outlier removal ───────────────────────────────────────
     pcd = o3d.geometry.PointCloud()
     pcd.points = o3d.utility.Vector3dVector(pts)
-    pcd, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+    if has_color:
+        rgb = np.array([[p["r"], p["g"], p["b"]] for p in point_list], dtype=np.float64) / 255.0
+        pcd.colors = o3d.utility.Vector3dVector(rgb)
+    pcd, ind = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
     logger.debug("SOR: %d → %d points", n_raw, len(pcd.points))
 
     # ── 2. Coarse voxelisation ────────────────────────────────────────────────
@@ -83,13 +88,22 @@ def _build_voxel_grid(point_list: list[dict]) -> list[dict]:
     if not raw_voxels:
         return []
 
-    # ── 3. Build 3-D occupancy grid ───────────────────────────────────────────
+    # ── 3. Build 3-D occupancy grid + color map ───────────────────────────────
     indices = np.array([v.grid_index for v in raw_voxels], dtype=np.int32)
     # +2 padding so the Gaussian and erosion kernels don't clip grid edges
     shape   = tuple(indices.max(axis=0) + 2)
     grid    = np.zeros(shape, dtype=np.float32)
     grid[indices[:, 0], indices[:, 1], indices[:, 2]] = 1.0
     n_pre   = int((grid > 0).sum())
+
+    # color_map: grid-index tuple → [R, G, B] uint8
+    color_map: dict[tuple, np.ndarray] = {}
+    if has_color:
+        for v in raw_voxels:
+            ix, iy, iz = v.grid_index
+            color_map[(ix, iy, iz)] = np.array(
+                [int(round(c * 255)) for c in v.color], dtype=np.uint8
+            )
 
     # ── 4. Gaussian smoothing — shape simplification ──────────────────────────
     smoothed = gaussian_filter(grid, sigma=GAUSS_SIGMA)
@@ -127,7 +141,37 @@ def _build_voxel_grid(point_list: list[dict]) -> list[dict]:
     )
 
     xi, yi, zi = np.where(final_grid)
-    return [{"x": int(x), "y": int(y), "z": int(z)} for x, y, z in zip(xi, yi, zi)]
+
+    if not has_color:
+        return [{"x": int(x), "y": int(y), "z": int(z)} for x, y, z in zip(xi, yi, zi)]
+
+    # ── 7. Assign colors to final voxels ─────────────────────────────────────
+    _NEIGHBOR_OFFSETS = [
+        (dx, dy, dz)
+        for dx in (-1, 0, 1)
+        for dy in (-1, 0, 1)
+        for dz in (-1, 0, 1)
+        if not (dx == 0 and dy == 0 and dz == 0)
+    ]
+    _GRAY = np.array([128, 128, 128], dtype=np.uint8)
+
+    result = []
+    for x, y, z in zip(xi, yi, zi):
+        key = (int(x), int(y), int(z))
+        rgb = color_map.get(key)
+        if rgb is None:
+            # Dilation may have added this cell — sample nearest neighbor
+            for dx, dy, dz in _NEIGHBOR_OFFSETS:
+                rgb = color_map.get((key[0] + dx, key[1] + dy, key[2] + dz))
+                if rgb is not None:
+                    break
+            if rgb is None:
+                rgb = _GRAY
+        result.append({
+            "x": int(x), "y": int(y), "z": int(z),
+            "r": int(rgb[0]), "g": int(rgb[1]), "b": int(rgb[2]),
+        })
+    return result
 
 
 async def run_voxelization(run_id: str) -> dict:
