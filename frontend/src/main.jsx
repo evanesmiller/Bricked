@@ -147,6 +147,83 @@ function PointCloudViewer({ points }) {
   );
 }
 
+// ── Segmented views bay ───────────────────────────────────────────────────────
+
+function ConfidencePill({ value }) {
+  const pct = Math.round(value * 100);
+  const color =
+    pct >= 70 ? "bg-emerald-500 text-white"
+    : pct >= 40 ? "bg-amber-400 text-amber-950"
+    :             "bg-rose-500 text-white";
+  return (
+    <span className={`absolute top-1 right-1 rounded px-1.5 py-0.5 text-[10px] font-bold leading-none ${color}`}>
+      {pct}%
+    </span>
+  );
+}
+
+function SegmentedViewsBay({ run }) {
+  const segmented = run?.segmented_images ?? [];
+  const skipped   = run?.skipped_images   ?? [];
+  const done      = segmented.length > 0;
+
+  return (
+    <article className="rounded-md border border-cyan-100/15 bg-[#071d24] p-4 shadow-abyss">
+      {/* Image grid */}
+      <div className="rounded-md border border-cyan-100/15 bg-[#031318] bg-scan-lines [background-size:24px_24px] p-2">
+        {done ? (
+          <div className="grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
+            {segmented.map((img) => (
+              <figure
+                key={img.segmented_file_id}
+                className="relative overflow-hidden rounded border border-cyan-100/10 bg-[#020e13]"
+              >
+                <img
+                  src={`${API_BASE_URL}/api/uploads/images/${img.segmented_file_id}`}
+                  alt={img.filename}
+                  className="aspect-square w-full object-contain"
+                  loading="lazy"
+                />
+                <ConfidencePill value={img.detection.confidence} />
+              </figure>
+            ))}
+          </div>
+        ) : (
+          <div className="flex h-48 items-center justify-center rounded border border-dashed border-cyan-100/20 text-center text-sm text-slate-300">
+            {run ? "No images passed segmentation" : "Awaiting segmentation"}
+          </div>
+        )}
+      </div>
+
+      {/* Caption */}
+      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-cyan-200">
+        {done ? "Segmented" : "Waiting for upload"}
+      </p>
+      <h3 className="mt-2 text-xl font-bold text-white">Segmented Views</h3>
+      <p className="mt-2 text-sm leading-6 text-slate-300">
+        {done
+          ? `${segmented.length} mask${segmented.length === 1 ? "" : "s"} extracted. Badge shows YOLO confidence.`
+          : "Object masks from each image will surface here."}
+        {skipped.length > 0 && ` ${skipped.length} image${skipped.length === 1 ? "" : "s"} skipped.`}
+      </p>
+
+      {/* Skipped image details */}
+      {skipped.length > 0 && (
+        <div className="mt-3 rounded border border-amber-200/20 bg-amber-950/25 px-3 py-2">
+          <p className="text-xs font-semibold text-amber-300">Skipped — low confidence or no detection</p>
+          <ul className="mt-1 space-y-0.5">
+            {skipped.map((s) => (
+              <li key={s.filename} className="truncate text-xs text-amber-200/70" title={s.reason}>
+                {s.filename}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </article>
+  );
+}
+
 // ── Point cloud bay (replaces the static placeholder) ────────────────────────
 
 function PointCloudBay({ pointCloud }) {
@@ -478,11 +555,7 @@ function App() {
       </section>
 
       <section className="mx-auto grid max-w-7xl gap-6 px-5 pb-10 sm:px-8 lg:grid-cols-[1fr_1fr_1fr] lg:px-10">
-        <ModelBay
-          title="Segmented Views"
-          status="Waiting for upload"
-          copy="Object masks from each image will surface here."
-        />
+        <SegmentedViewsBay run={run} />
         <PointCloudBay pointCloud={pointCloud} />
         <ModelBay
           title="Mesh Draft"

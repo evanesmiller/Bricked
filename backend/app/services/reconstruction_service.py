@@ -20,6 +20,7 @@ import cv2
 import numpy as np
 from bson import ObjectId
 from fastapi import HTTPException
+from scipy.ndimage import label as nd_label, binary_erosion
 
 from app.database import get_db, get_gridfs
 
@@ -30,7 +31,17 @@ logger = logging.getLogger(__name__)
 GRID_SIZE        = 64    # Voxel grid resolution (N³)
 CAMERA_DISTANCE  = 3.0   # Distance from camera to object origin; object spans [-1,1]³
 CAMERA_ELEVATION = 0.3   # Radians (~17°) — cameras tilt slightly downward
-FOV_DEGREES      = 60.0  # Horizontal field of view assumed for every image
+
+# Silhouette normalisation — each raw mask is cropped to its bounding box,
+# padded, and resized to a square before projection.  The focal length is then
+# derived analytically so the ±1 world extent maps to the padded boundary.
+NORM_SIZE        = 256   # Normalised silhouette side length in pixels
+NORM_PAD         = 0.10  # Fractional padding added around the bounding box
+DILATION_PX      = 10    # Extra dilation on the normalised mask (error margin)
+
+# A voxel is kept when it lies inside at least this fraction of views.
+# Higher = tighter hull, lower = more tolerant of camera model errors.
+MIN_VOTE_FRAC    = 0.75
 
 
 # ── Core silhouette helpers ───────────────────────────────────────────────────
@@ -89,54 +100,102 @@ def _build_camera(
 
 # ── Visual Hull carving ───────────────────────────────────────────────────────
 
+def _normalize_silhouette(
+    mask: np.ndarray,
+    out_size: int  = NORM_SIZE,
+    pad_frac: float = NORM_PAD,
+    dilation_px: int = DILATION_PX,
+) -> np.ndarray:
+    """
+    Crop to the object bounding box, add padding, resize to a square, then
+    dilate. This removes the dependency on camera distance / zoom level and
+    gives a tolerance margin for projection errors.
+    """
+    rows = np.any(mask, axis=1)
+    cols = np.any(mask, axis=0)
+    if not rows.any():
+        return np.zeros((out_size, out_size), dtype=np.uint8)
+
+    r0, r1 = int(np.where(rows)[0][0]),  int(np.where(rows)[0][-1])
+    c0, c1 = int(np.where(cols)[0][0]),  int(np.where(cols)[0][-1])
+    h_img, w_img = mask.shape
+
+    pad_r = max(1, int((r1 - r0) * pad_frac))
+    pad_c = max(1, int((c1 - c0) * pad_frac))
+    r0 = max(0, r0 - pad_r);  r1 = min(h_img, r1 + pad_r)
+    c0 = max(0, c0 - pad_c);  c1 = min(w_img, c1 + pad_c)
+
+    # Make square around centroid so aspect ratio doesn't distort projection
+    side = max(r1 - r0, c1 - c0)
+    cr   = (r0 + r1) // 2;  cc = (c0 + c1) // 2
+    r0   = max(0, cr - side // 2);  r1 = min(h_img, r0 + side)
+    c0   = max(0, cc - side // 2);  c1 = min(w_img, c0 + side)
+
+    cropped = mask[r0:r1, c0:c1]
+    if 0 in cropped.shape:
+        return np.zeros((out_size, out_size), dtype=np.uint8)
+
+    normed = cv2.resize(cropped, (out_size, out_size), interpolation=cv2.INTER_NEAREST)
+
+    if dilation_px > 0:
+        kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_px * 2 + 1,) * 2)
+        normed = cv2.dilate(normed, kernel)
+
+    return normed
+
+
 def _visual_hull_carving(
     silhouettes: list[np.ndarray],
     image_sizes: list[tuple[int, int]],
-    grid_size: int    = GRID_SIZE,
-    distance: float   = CAMERA_DISTANCE,
-    elevation: float  = CAMERA_ELEVATION,
-    fov_deg: float    = FOV_DEGREES,
+    grid_size: int   = GRID_SIZE,
+    distance: float  = CAMERA_DISTANCE,
+    elevation: float = CAMERA_ELEVATION,
 ) -> np.ndarray:
     """
-    Carve a dense voxel grid using one silhouette per camera view.
+    Carve a dense voxel grid using normalised silhouettes and a vote threshold.
 
-    A voxel is kept only when it projects inside the silhouette for *every*
-    view (or is behind that camera and cannot be judged).
+    Each silhouette is cropped to its bounding box and resized to NORM_SIZE²
+    before projection, making the algorithm independent of the original image
+    zoom / camera distance.  The focal length is derived analytically so the
+    ±1 world extent maps to the padded boundary of the normalised image.
+
+    A voxel is kept when it lies inside at least MIN_VOTE_FRAC of the views
+    (behind-camera views abstain rather than voting against).
 
     Returns an (M, 3) float32 array of occupied voxel centres in [-1, 1]³.
     """
     n_views = len(silhouettes)
+    sz      = float(NORM_SIZE)
+
+    # Focal length: maps world ±1 to the inner (non-padded) boundary of the
+    # normalised image at the assumed camera distance.
+    # f * 1.0 / distance == (0.5 - NORM_PAD) * NORM_SIZE
+    f_eff = (0.5 - NORM_PAD) * sz * distance
+    cx = cy = sz / 2.0
 
     # Build flat array of all voxel-centre world coordinates (N, 3)
-    coords = np.linspace(-1.0, 1.0, grid_size)
+    coords    = np.linspace(-1.0, 1.0, grid_size)
     gx, gy, gz = np.meshgrid(coords, coords, coords, indexing="ij")
     pts_world = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=1).astype(np.float32)
 
-    occupied = np.ones(grid_size ** 3, dtype=bool)
-    angles   = np.linspace(0.0, 2.0 * np.pi, n_views, endpoint=False)
+    votes  = np.zeros(grid_size ** 3, dtype=np.int32)
+    angles = np.linspace(0.0, 2.0 * np.pi, n_views, endpoint=False)
 
     for i, angle in enumerate(angles):
-        sil = silhouettes[i]
-        w, h = image_sizes[i]
+        sil = _normalize_silhouette(silhouettes[i])
+        w = h = NORM_SIZE
 
         R, t = _build_camera(angle, elevation, distance)
         R = R.astype(np.float32)
         t = t.astype(np.float32)
 
-        # Project to camera space  (N, 3)
         pts_cam = (R @ pts_world.T).T + t
-
-        z = pts_cam[:, 2]
+        z        = pts_cam[:, 2]
         in_front = z > 1e-4
 
-        # Perspective projection → pixel coords
-        f  = (w / 2.0) / np.tan(np.radians(fov_deg / 2.0))
-        cx = w / 2.0
-        cy = h / 2.0
-
         safe_z = np.where(in_front, z, 1.0)
-        px = f * pts_cam[:, 0] / safe_z + cx
-        py = f * pts_cam[:, 1] / safe_z + cy
+        px = f_eff * pts_cam[:, 0] / safe_z + cx
+        py = f_eff * pts_cam[:, 1] / safe_z + cy
 
         px_i = np.round(px).astype(np.int32)
         py_i = np.round(py).astype(np.int32)
@@ -148,10 +207,34 @@ def _visual_hull_carving(
         if idx.size:
             in_sil[idx] = sil[py_i[idx], px_i[idx]] > 0
 
-        # Carve: remove voxels that are in-front-of-camera but outside silhouette
-        occupied &= in_sil | ~in_front
+        # Behind-camera voxels abstain (counted as passing this view)
+        votes += (in_sil | ~in_front).astype(np.int32)
 
-    return pts_world[occupied]
+    min_votes    = max(1, int(np.ceil(n_views * MIN_VOTE_FRAC)))
+    occupied_3d  = (votes >= min_votes).reshape(grid_size, grid_size, grid_size)
+
+    # ── Keep only the largest connected component ────────────────────────────
+    # Satellite blobs caused by camera-model errors are discarded; only the
+    # single largest contiguous region (the actual object) is retained.
+    labeled, n_components = nd_label(occupied_3d)
+    if n_components == 0:
+        return pts_world[np.zeros(grid_size**3, dtype=bool)]
+    if n_components > 1:
+        sizes         = np.bincount(labeled.ravel())[1:]   # component sizes (skip bg=0)
+        largest_label = int(np.argmax(sizes)) + 1
+        occupied_3d   = labeled == largest_label
+        logger.info(
+            "Connected components: %d found, kept largest (%d voxels), "
+            "discarded %d voxels in satellite blobs",
+            n_components,
+            sizes[largest_label - 1],
+            sizes.sum() - sizes[largest_label - 1],
+        )
+
+    # ── Single-voxel erosion to remove thin surface noise ────────────────────
+    occupied_3d = binary_erosion(occupied_3d).astype(bool)
+
+    return pts_world[occupied_3d.ravel()]
 
 
 # ── Async pipeline stage ──────────────────────────────────────────────────────
