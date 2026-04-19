@@ -5,8 +5,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 import "./styles.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
-const MIN_IMAGES = 4;
-const MAX_IMAGES = 8;
+const MIN_IMAGES = 8;
+const MAX_IMAGES = 16;
 
 function formatSize(bytes) {
   if (!bytes) return "0 KB";
@@ -261,7 +261,7 @@ function ModelBay({ title, status, copy }) {
     <article className="rounded-md border border-cyan-100/15 bg-[#071d24] p-4 shadow-abyss">
       <div className="min-h-48 rounded-md border border-cyan-100/15 bg-[#031318] bg-scan-lines [background-size:24px_24px] p-4">
         <div className="flex h-full min-h-40 items-center justify-center rounded border border-dashed border-cyan-100/20 text-center text-sm text-slate-300">
-          Mesh preview placeholder
+          Awaiting voxelization
         </div>
       </div>
       <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-cyan-200">{status}</p>
@@ -289,13 +289,21 @@ function PipelinePanel({ run, stage, isUploading }) {
       if (isUploading && stage === "Reconstructing 3D shape...") return "in-progress";
       if (run?.reconstruction) return "completed";
     }
+    if (index === 3) {
+      if (isUploading && stage === "Voxelizing...") return "in-progress";
+      if (run?.voxelization) return "completed";
+    }
+    if (index === 4) {
+      if (isUploading && stage === "Converting to LEGO...") return "in-progress";
+      if (run?.lego) return "completed";
+    }
     return "pending";
   }
 
   return (
     <aside className="rounded-md border border-teal-200/15 bg-[#04181f]/85 p-5 shadow-abyss backdrop-blur">
       <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-200">Processing Current</p>
-      <h2 className="mt-2 text-2xl font-bold text-white">Pipeline placeholders are surfaced early.</h2>
+      <h2 className="mt-2 text-2xl font-bold text-white">Processing pipeline beneath the waves.</h2>
       <div className="mt-6 space-y-3">
         {steps.map((step, index) => {
           const status = getStepStatus(index);
@@ -334,12 +342,12 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-200">Upload Pictures</p>
-          <h2 className="mt-2 text-2xl font-bold text-white">Send 4-8 object photos below deck.</h2>
+          <h2 className="mt-2 text-2xl font-bold text-white">Stow away 8–16 images o’ yer object below deck!</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-            Choose JPG, PNG, or WebP images from different angles. The API stores the originals in MongoDB GridFS.
+            Hoist yer camera, matey, and gather yer images in JPG, PNG, HEIC, or WebP from all around the booty! For the finest plunder, snap 8 shots level with the object, turnin’ it 45° each time, then climb above and take 8 more from on high at the same bearings.
           </p>
         </div>
-        <div className="rounded-md border border-teal-200/20 bg-teal-900/30 px-3 py-2 text-sm text-teal-50">
+        <div className="rounded-md border border-teal-200/20 bg-teal-900/30 px-5 py-3 text-sm font-bold text-teal-50">
           {files.length}/{MAX_IMAGES} selected
         </div>
       </div>
@@ -355,7 +363,15 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
         type="button"
       >
         <span className="text-lg font-semibold text-white">Drop images here or browse</span>
-        <span className="mt-2 text-sm text-slate-300">One upload creates a new processing run.</span>
+      </button>
+
+      <button
+        className="mt-3 w-full rounded-md bg-cyan-300 px-5 py-3 text-sm font-bold text-[#031318] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
+        disabled={!canUpload}
+        onClick={onUpload}
+        type="button"
+      >
+        {isUploading ? stage || "Processing..." : "Generate Lego"}
       </button>
 
       <input
@@ -393,16 +409,6 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
-        <button
-          className="rounded-md bg-cyan-300 px-5 py-3 text-sm font-bold text-[#031318] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
-          disabled={!canUpload}
-          onClick={onUpload}
-          type="button"
-        >
-          {isUploading ? stage || "Processing..." : "Generate Lego"}
-        </button>
-      </div>
 
       {run && (
         <div className="mt-5 rounded-md border border-emerald-200/30 bg-emerald-950/35 p-4 text-sm text-emerald-50">
@@ -495,7 +501,7 @@ function App() {
       if (!segRes.ok) throw new Error(segData?.detail ?? "Segmentation failed.");
       setRun((prev) => ({ ...prev, ...segData }));
 
-      // 3 — Reconstruct (visual hull)
+      // 3 — Reconstruct (COLMAP SfM → point cloud)
       setStage("Reconstructing 3D shape...");
       const reconRes  = await fetch(`${API_BASE_URL}/api/runs/${uploadData.run_id}/reconstruct`, { method: "POST" });
       const reconData = await reconRes.json().catch(() => null);
@@ -506,6 +512,20 @@ function App() {
       const pcRes  = await fetch(`${API_BASE_URL}/api/runs/${uploadData.run_id}/pointcloud`);
       const pcData = await pcRes.json().catch(() => null);
       if (pcRes.ok && pcData) setPointCloud(pcData);
+
+      // 5 — Voxelize
+      setStage("Voxelizing...");
+      const voxRes  = await fetch(`${API_BASE_URL}/api/runs/${uploadData.run_id}/voxelize`, { method: "POST" });
+      const voxData = await voxRes.json().catch(() => null);
+      if (!voxRes.ok) throw new Error(voxData?.detail ?? "Voxelization failed.");
+      setRun((prev) => ({ ...prev, voxelization: voxData }));
+
+      // 6 — LEGO conversion
+      setStage("Converting to LEGO...");
+      const legoRes  = await fetch(`${API_BASE_URL}/api/runs/${uploadData.run_id}/lego`, { method: "POST" });
+      const legoData = await legoRes.json().catch(() => null);
+      if (!legoRes.ok) throw new Error(legoData?.detail ?? "LEGO conversion failed.");
+      setRun((prev) => ({ ...prev, lego: legoData }));
 
       setStage("Done");
     } catch (err) {
@@ -530,7 +550,7 @@ function App() {
             <div>
               <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-200">Bricked</p>
               <h1 className="mt-3 max-w-4xl text-4xl font-black leading-tight text-white sm:text-6xl">
-                Build a brick-ready model from a ring of photos.
+                Flick it up & Brick it up
               </h1>
             </div>
           </header>
@@ -570,8 +590,7 @@ function App() {
             <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-200">Final Voxel Model</p>
             <h2 className="mt-3 text-2xl font-bold text-white">Voxel bay awaiting reconstruction.</h2>
             <p className="mt-3 text-sm leading-6 text-slate-300">
-              The final LEGO-style cube grid will appear here once segmentation, mesh reconstruction, voxelization,
-              and brick conversion are connected.
+              Arrr, the final LEGO-style cube grid be showin’ itself here once ye’ve lashed together segmentation, mesh reconstruction, voxelizin’, and brick conversion like a proper ship’s riggin’!
             </p>
           </div>
           <div className="min-h-72 rounded-md border border-cyan-200/20 bg-[#031318] bg-scan-lines [background-size:28px_28px] p-4">
