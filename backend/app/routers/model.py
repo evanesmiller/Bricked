@@ -117,10 +117,53 @@ async def get_pointcloud(run_id: str):
         points = points[::step]
 
     return {
-        "points": points,
-        "point_count": recon["point_count"],
-        "method": recon.get("method", "unknown"),
-        "grid_size": recon.get("grid_size", 64),
+        "points":       points,
+        "point_count":  recon["point_count"],
+        "method":       recon.get("method", "unknown"),
+        "grid_size":    recon.get("grid_size", 64),
+        "elevation_rad": recon.get("elevation_rad"),
+    }
+
+
+@router.get("/voxels")
+async def get_voxels(run_id: str):
+    """
+    Return the voxel grid for browser visualization.
+
+    Response shape:
+    {
+      "voxels": [{"x","y","z"}, ...],
+      "voxel_count": 12345,
+      "voxel_size": 0.05
+    }
+    """
+    oid = _validate_object_id(run_id)
+    db  = get_db()
+    fs  = get_gridfs()
+
+    run = await db.runs.find_one({"_id": oid})
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    vox = run.get("voxelization")
+    if not vox:
+        raise HTTPException(
+            status_code=404,
+            detail="No voxel data — run the voxelize stage first",
+        )
+
+    stream = await fs.open_download_stream(ObjectId(vox["voxel_file_id"]))
+    voxels = json.loads(await stream.read())
+
+    MAX_VOXELS = 12_000
+    if len(voxels) > MAX_VOXELS:
+        step   = max(1, len(voxels) // MAX_VOXELS)
+        voxels = voxels[::step]
+
+    return {
+        "voxels":      voxels,
+        "voxel_count": vox["voxel_count"],
+        "voxel_size":  vox["voxel_size"],
     }
 
 
