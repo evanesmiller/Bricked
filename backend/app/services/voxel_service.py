@@ -22,6 +22,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import cv2
 import numpy as np
 from bson import ObjectId
 from fastapi import HTTPException
@@ -104,6 +105,18 @@ def _build_voxel_grid(point_list: list[dict]) -> list[dict]:
             color_map[(ix, iy, iz)] = np.array(
                 [int(round(c * 255)) for c in v.color], dtype=np.uint8
             )
+
+    # ── 3b. Saturation boost — Open3D averages colors across all points in a
+    #        voxel cell, which pulls mixed-surface cells toward gray.  Boost
+    #        saturation to restore vivid colors before downstream quantization.
+    if has_color and color_map:
+        keys   = list(color_map.keys())
+        rgb_arr = np.array([color_map[k] for k in keys], dtype=np.uint8).reshape(-1, 1, 3)
+        hsv     = cv2.cvtColor(rgb_arr, cv2.COLOR_RGB2HSV).astype(np.float32)
+        hsv[:, 0, 1] = np.clip(hsv[:, 0, 1] * 1.5, 0, 255)
+        boosted = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2RGB).reshape(-1, 3)
+        for i, k in enumerate(keys):
+            color_map[k] = boosted[i]
 
     # ── 4. Gaussian smoothing — shape simplification ──────────────────────────
     smoothed = gaussian_filter(grid, sigma=GAUSS_SIGMA)

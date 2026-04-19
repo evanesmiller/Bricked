@@ -47,6 +47,10 @@ def _rgb_to_lab(r: int, g: int, b: int) -> np.ndarray:
     px = np.array([[[r, g, b]]], dtype=np.uint8)
     return cv2.cvtColor(px, cv2.COLOR_RGB2LAB)[0, 0].astype(np.float32)
 
+def _rgb_array_to_lab(arr: np.ndarray) -> np.ndarray:
+    """Batch convert (N, 3) uint8 RGB array to (N, 3) float32 LAB."""
+    return cv2.cvtColor(arr.reshape(-1, 1, 3), cv2.COLOR_RGB2LAB).reshape(-1, 3).astype(np.float32)
+
 _PALETTE_LAB = np.stack([
     _rgb_to_lab(r, g, b) for _, r, g, b in LEGO_PALETTE.values()
 ])  # (N, 3)
@@ -54,10 +58,9 @@ _PALETTE_LAB = np.stack([
 # Supported brick footprints (width x depth in stud units)
 BRICK_TYPES = [(2, 4), (2, 3), (2, 2), (1, 4), (1, 3), (1, 2), (1, 1)]
 
-# Minimum fraction of voxels a LEGO color must represent to be kept.
-# Colors below this threshold are noise and get merged into the nearest dominant color.
-#Sensitivity
-_MIN_COLOR_FRACTION = 0.03
+# Number of k-means clusters used to derive the dominant color palette.
+# Raise to allow more colors; lower to be stricter about phantom-color suppression.
+_N_COLOR_CLUSTERS = 6
 
 
 def _quantize_against(r: int, g: int, b: int,
@@ -72,27 +75,40 @@ def _quantize_against(r: int, g: int, b: int,
 
 def _dominant_palette(voxels: list[dict]) -> tuple[list[str], np.ndarray]:
     """
-    Two-pass palette derivation:
-      1. Quantize every voxel against the full LEGO palette.
-      2. Keep only colors that cover >= _MIN_COLOR_FRACTION of voxels
-         (minimum 3 voxels absolute), eliminating phantom colors from
-         single stray voxels.
-      3. Return a restricted (names, lab_array) pair for final quantization.
+    K-means palette derivation in CIE-LAB space:
+      1. Convert all voxel colors to LAB for perceptually-uniform clustering.
+      2. Run k-means to find _N_COLOR_CLUSTERS perceptual color groups.
+      3. Map each cluster centroid to the nearest LEGO palette color.
+
+    Clustering on centroids rather than individual voxels means noise voxels
+    with stray colors (e.g. a handful of reddish points on a brown surface)
+    get absorbed into the dominant cluster instead of contributing a phantom
+    LEGO color.
     """
-    counts: dict[str, int] = {}
-    for v in voxels:
-        name, _ = _quantize_against(v["r"], v["g"], v["b"], _PALETTE_NAMES, _PALETTE_LAB)
-        counts[name] = counts.get(name, 0) + 1
+    from scipy.cluster.vq import kmeans as _kmeans
 
-    total     = len(voxels)
-    min_count = max(3, int(total * _MIN_COLOR_FRACTION))
-    dominant  = [n for n, c in counts.items() if c >= min_count]
+    rgb_arr = np.array([[v["r"], v["g"], v["b"]] for v in voxels], dtype=np.uint8)
+    lab_arr = _rgb_array_to_lab(rgb_arr)  # (N, 3) float32
 
-    if not dominant:
-        dominant = [max(counts, key=counts.get)]
+    k = min(_N_COLOR_CLUSTERS, len(lab_arr))
+    try:
+        centroids, _ = _kmeans(lab_arr.astype(np.float64), k, iter=20)
+    except Exception:
+        centroids = lab_arr[:k].astype(np.float64)
 
-    lab_arr = np.stack([_rgb_to_lab(*LEGO_PALETTE[n][1:]) for n in dominant])
-    return dominant, lab_arr
+    used_names: list[str] = []
+    for c in centroids:
+        diffs = _PALETTE_LAB - c.astype(np.float32)
+        idx   = int(np.argmin((diffs ** 2).sum(axis=1)))
+        name  = _PALETTE_NAMES[idx]
+        if name not in used_names:
+            used_names.append(name)
+
+    if not used_names:
+        used_names = ["Medium Stone Gray"]
+
+    restricted_lab = np.stack([_rgb_to_lab(*LEGO_PALETTE[n][1:]) for n in used_names])
+    return used_names, restricted_lab
 
 
 def _pack_bricks(voxels: list[dict]) -> list[dict]:
