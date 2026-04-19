@@ -38,6 +38,8 @@ A web app that transforms real-world objects into LEGO-style buildable models. U
 
 ```bash
 cd backend
+python3 -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
@@ -52,6 +54,7 @@ pip install -r requirements.txt
 
 ```bash
 cd backend
+source venv/bin/activate      # Windows: venv\Scripts\activate
 MONGO_URI="mongodb://<host>:27017" uvicorn app.main:app --reload
 ```
 
