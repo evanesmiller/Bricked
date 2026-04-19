@@ -53,9 +53,9 @@ logger = logging.getLogger(__name__)
 # OPEN_ITERS=1 removes thin silhouette fins that the Gaussian pass may leave.
 
 VOXEL_SIZE   = 0.07   # world units in [-1, 1]³  →  ~29 voxels per axis
-GAUSS_SIGMA  = 0.5    # smoothing radius in voxels
+GAUSS_SIGMA  = 0.2    # smoothing radius in voxels
 GAUSS_THRESH = 0.45   # re-binarisation threshold after smoothing
-OPEN_ITERS   = 1      # morphological opening iterations (fin removal)
+OPEN_ITERS   = 0      # morphological opening iterations (fin removal)
 
 
 def _build_voxel_grid(point_list: list[dict]) -> list[dict]:
