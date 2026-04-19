@@ -79,6 +79,51 @@ async def get_parts(run_id: str):
     }
 
 
+@router.get("/pointcloud")
+async def get_pointcloud(run_id: str):
+    """
+    Return a sub-sampled point cloud for browser visualization.
+
+    Response shape:
+    {
+      "points": [{"x", "y", "z"}, ...],
+      "point_count": 18432,
+      "method": "visual_hull",
+      "grid_size": 64
+    }
+    """
+    oid = _validate_object_id(run_id)
+    db = get_db()
+    fs = get_gridfs()
+
+    run = await db.runs.find_one({"_id": oid})
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    recon = run.get("reconstruction")
+    if not recon:
+        raise HTTPException(
+            status_code=404,
+            detail="No reconstruction data — run the reconstruct stage first",
+        )
+
+    stream = await fs.open_download_stream(ObjectId(recon["point_cloud_file_id"]))
+    points = json.loads(await stream.read())
+
+    # Sub-sample to keep the HTTP response snappy for the browser
+    MAX_POINTS = 8_000
+    if len(points) > MAX_POINTS:
+        step = max(1, len(points) // MAX_POINTS)
+        points = points[::step]
+
+    return {
+        "points": points,
+        "point_count": recon["point_count"],
+        "method": recon.get("method", "unknown"),
+        "grid_size": recon.get("grid_size", 64),
+    }
+
+
 @router.get("/status")
 async def get_status(run_id: str):
     """
