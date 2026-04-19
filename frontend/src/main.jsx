@@ -6,7 +6,7 @@ import "./styles.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 const MIN_IMAGES = 4;
-const MAX_IMAGES = 8;
+const MAX_IMAGES = 16;
 
 function formatSize(bytes) {
   if (!bytes) return "0 KB";
