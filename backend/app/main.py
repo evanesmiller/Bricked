@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from app.database import connect_db, close_db
-from app.routers import uploads
+from app.routers import uploads, pipeline, model
 
 
 @asynccontextmanager
@@ -22,3 +22,5 @@ app.add_middleware(
 )
 
 app.include_router(uploads.router, prefix="/api")
+app.include_router(pipeline.router, prefix="/api")
+app.include_router(model.router, prefix="/api")
