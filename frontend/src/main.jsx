@@ -97,8 +97,12 @@ function PointCloudViewer({ points }) {
       positions[i * 3]     = p.x;
       positions[i * 3 + 1] = p.y;
       positions[i * 3 + 2] = p.z;
-      const t = (p.y - yMin) / (yMax - yMin + 1e-6);
-      color.setHSL(0.58 - t * 0.28, 0.9, 0.55);
+      if (p.r !== undefined) {
+        color.setRGB(p.r / 255, p.g / 255, p.b / 255);
+      } else {
+        const t = (p.y - yMin) / (yMax - yMin + 1e-6);
+        color.setHSL(0.58 - t * 0.28, 0.9, 0.55);
+      }
       colors[i * 3]     = color.r;
       colors[i * 3 + 1] = color.g;
       colors[i * 3 + 2] = color.b;
@@ -107,7 +111,7 @@ function PointCloudViewer({ points }) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geo.setAttribute("color",    new THREE.BufferAttribute(colors,    3));
-    const mat   = new THREE.PointsMaterial({ size: 0.05, vertexColors: true, sizeAttenuation: true });
+    const mat   = new THREE.PointsMaterial({ size: 0.02, vertexColors: true, sizeAttenuation: true });
     scene.add(new THREE.Points(geo, mat));
 
     return () => dispose([geo, mat]);
@@ -170,8 +174,12 @@ function VoxelGridViewer({ voxels }) {
       dummy.position.set(v.x, v.y, v.z);
       dummy.updateMatrix();
       mesh.setMatrixAt(i, dummy.matrix);
-      const t = (v.y - yMin) / (yMax - yMin + 1e-6);
-      color.setHSL(0.58 - t * 0.28, 0.9, 0.55);
+      if (v.r !== undefined) {
+        color.setRGB(v.r / 255, v.g / 255, v.b / 255);
+      } else {
+        const t = (v.y - yMin) / (yMax - yMin + 1e-6);
+        color.setHSL(0.58 - t * 0.28, 0.9, 0.55);
+      }
       mesh.setColorAt(i, color);
     });
     mesh.instanceMatrix.needsUpdate = true;
