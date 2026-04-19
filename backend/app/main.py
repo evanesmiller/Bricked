@@ -16,7 +16,7 @@ app = FastAPI(title="Bricked API", version="0.1.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],  # Vite dev server
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -24,3 +24,8 @@ app.add_middleware(
 app.include_router(uploads.router, prefix="/api")
 app.include_router(pipeline.router, prefix="/api")
 app.include_router(model.router, prefix="/api")
+
+
+@app.get("/")
+async def health():
+    return {"status": "ok", "docs": "/docs"}
