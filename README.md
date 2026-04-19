@@ -55,42 +55,65 @@ pip install -r requirements.txt
 ```bash
 cd backend
 source venv/bin/activate      # Windows: venv\Scripts\activate
-MONGO_URI="mongodb://<host>:27017" uvicorn app.main:app --reload
+MONGO_URL="mongodb://<host>:27017" uvicorn app.main:app --reload
 ```
 
 Server runs at `http://localhost:8000`. Interactive API docs at `http://localhost:8000/docs`.
 
 ### API Endpoints
 
-#### `POST /api/uploads/runs`
-Upload images and create a new processing run.
+Each run moves through a linear pipeline. Trigger each stage in order by calling the corresponding `POST` endpoint.
 
-- **Body:** `multipart/form-data` with field `images` (1–20 files, JPEG/PNG/WebP, max 50MB each)
-- **Returns:** `run_id` and metadata for each uploaded image
+```
+uploaded → segmented → reconstructed → voxelized → complete
+```
 
+#### Upload & Storage
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/uploads/runs` | Upload 1–20 images, create a run. Body: `multipart/form-data` field `images` |
+| `GET` | `/api/uploads/runs/{run_id}` | Fetch full run document from MongoDB |
+| `GET` | `/api/uploads/images/{file_id}` | Stream an image from GridFS |
+
+#### Pipeline Triggers
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/runs/{run_id}/segment` | Run YOLO segmentation on uploaded images |
+| `POST` | `/api/runs/{run_id}/reconstruct` | Run OpenCV SfM to build a point cloud |
+| `POST` | `/api/runs/{run_id}/voxelize` | Convert point cloud to voxel grid via Open3D |
+| `POST` | `/api/runs/{run_id}/lego` | Pack voxels into LEGO bricks and generate parts list |
+
+#### Model & Results (consumed by Three.js frontend)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/runs/{run_id}/status` | Poll current pipeline status |
+| `GET` | `/api/runs/{run_id}/model` | Fetch full brick layout JSON for Three.js renderer |
+| `GET` | `/api/runs/{run_id}/parts` | Fetch parts list (type, color, count per brick) |
+
+**Example `/model` response:**
+```json
+{
+  "bricks": [
+    { "x": 0, "y": 0, "z": 0, "width": 2, "depth": 4, "height": 1, "type": "2x4", "color": "#9BA19D", "color_name": "Gray" }
+  ],
+  "dimensions": { "width": 10, "height": 5, "depth": 8 }
+}
+```
+
+**Example `/parts` response:**
 ```json
 {
   "run_id": "abc123",
-  "images": [
-    { "file_id": "xyz789", "filename": "front.jpg", "size": 204800 }
+  "brick_count": 42,
+  "parts": [
+    { "type": "2x4", "color_name": "Gray", "color": "#9BA19D", "count": 18 },
+    { "type": "1x2", "color_name": "Gray", "color": "#9BA19D", "count": 24 }
   ]
 }
 ```
-
-#### `GET /api/uploads/runs/{run_id}`
-Get the status and image references for a run.
-
-```json
-{
-  "run_id": "abc123",
-  "status": "uploaded",
-  "created_at": "2026-04-18T12:00:00Z",
-  "images": [...]
-}
-```
-
-#### `GET /api/uploads/images/{file_id}`
-Stream a stored image directly from GridFS.
 
 ### Project structure
 
