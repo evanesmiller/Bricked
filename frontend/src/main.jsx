@@ -290,14 +290,14 @@ function SegmentedViewsBay({ run }) {
   const done      = segmented.length > 0;
 
   return (
-    <article className="rounded-md border border-cyan-100/15 bg-[#071d24] p-4 shadow-abyss">
-      <div className="rounded-md border border-cyan-100/15 bg-[#031318] bg-scan-lines [background-size:24px_24px] p-2">
+    <article className="rounded-md border border-amber-100/15 bg-[#1c0f05] p-4 shadow-abyss">
+      <div className="rounded-md border border-amber-100/15 bg-[#140c04] bg-scan-lines [background-size:24px_24px] p-2">
         {done ? (
           <div className="grid max-h-56 grid-cols-2 gap-1.5 overflow-y-auto pr-0.5 sm:grid-cols-3">
             {segmented.map((img) => (
               <figure
                 key={img.segmented_file_id}
-                className="relative overflow-hidden rounded border border-cyan-100/10 bg-[#020e13]"
+                className="relative overflow-hidden rounded border border-cyan-100/10 bg-[#0e0803]"
               >
                 <img
                   src={`${API_BASE_URL}/api/uploads/images/${img.segmented_file_id}`}
@@ -310,13 +310,13 @@ function SegmentedViewsBay({ run }) {
             ))}
           </div>
         ) : (
-          <div className="flex h-48 items-center justify-center rounded border border-dashed border-cyan-100/20 text-center text-sm text-slate-300">
-            {run ? "No images passed segmentation" : "Awaiting segmentation"}
+          <div className="flex h-48 items-center justify-center rounded border border-dashed border-amber-100/20 text-center text-sm text-slate-300">
+            Awaiting segmentation
           </div>
         )}
       </div>
 
-      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-cyan-200">
+      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-amber-300">
         {done ? "Segmented" : "Waiting for upload"}
       </p>
       <h3 className="mt-2 text-xl font-bold text-white">Segmented Views</h3>
@@ -347,19 +347,19 @@ function SegmentedViewsBay({ run }) {
 
 function PointCloudBay({ pointCloud }) {
   return (
-    <article className="rounded-md border border-cyan-100/15 bg-[#071d24] p-4 shadow-abyss">
-      <div className="min-h-48 rounded-md border border-cyan-100/15 bg-[#031318] bg-scan-lines [background-size:24px_24px] p-1">
+    <article className="rounded-md border border-amber-100/15 bg-[#1c0f05] p-4 shadow-abyss">
+      <div className="min-h-48 rounded-md border border-amber-100/15 bg-[#140c04] bg-scan-lines [background-size:24px_24px] p-1">
         {pointCloud ? (
           <div className="h-48">
             <PointCloudViewer points={pointCloud.points} />
           </div>
         ) : (
-          <div className="flex h-48 items-center justify-center rounded border border-dashed border-cyan-100/20 text-center text-sm text-slate-300">
+          <div className="flex h-48 items-center justify-center rounded border border-dashed border-amber-100/20 text-center text-sm text-slate-300">
             Awaiting reconstruction
           </div>
         )}
       </div>
-      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-cyan-200">
+      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-amber-300">
         {pointCloud ? "Reconstructed" : "Queued"}
       </p>
       <h3 className="mt-2 text-xl font-bold text-white">Point Cloud</h3>
@@ -376,19 +376,19 @@ function PointCloudBay({ pointCloud }) {
 
 function VoxelBay({ voxelData }) {
   return (
-    <article className="rounded-md border border-cyan-100/15 bg-[#071d24] p-4 shadow-abyss">
-      <div className="min-h-48 rounded-md border border-cyan-100/15 bg-[#031318] bg-scan-lines [background-size:24px_24px] p-1">
+    <article className="rounded-md border border-amber-100/15 bg-[#1c0f05] p-4 shadow-abyss">
+      <div className="min-h-48 rounded-md border border-amber-100/15 bg-[#140c04] bg-scan-lines [background-size:24px_24px] p-1">
         {voxelData ? (
           <div className="h-48">
             <VoxelGridViewer voxels={voxelData.voxels} />
           </div>
         ) : (
-          <div className="flex h-48 items-center justify-center rounded border border-dashed border-cyan-100/20 text-center text-sm text-slate-300">
+          <div className="flex h-48 items-center justify-center rounded border border-dashed border-amber-100/20 text-center text-sm text-slate-300">
             Awaiting voxelization
           </div>
         )}
       </div>
-      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-cyan-200">
+      <p className="mt-4 text-sm font-semibold uppercase tracking-[0.16em] text-amber-300">
         {voxelData ? "Voxelized" : "Queued"}
       </p>
       <h3 className="mt-2 text-xl font-bold text-white">Voxel Grid</h3>
@@ -408,23 +408,23 @@ function LegoBay({ legoModel, run }) {
 
   return (
     <section className="mx-auto max-w-7xl px-5 pb-12 sm:px-8 lg:px-10">
-      <div className="grid gap-5 rounded-md border border-teal-200/15 bg-[#071d24] p-5 shadow-abyss lg:grid-cols-[0.8fr_1.2fr]">
+      <div className="grid gap-5 rounded-md border border-amber-200/15 bg-[#1c0f05] p-5 shadow-abyss lg:grid-cols-[0.8fr_1.2fr]">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-200">Final LEGO Model</p>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-300">Final LEGO Model</p>
           <h2 className="mt-3 text-2xl font-bold text-white">
             {legoModel
               ? `${legoModel.bricks.length.toLocaleString()} bricks assembled.`
-              : "LEGO conversion queued."}
+              : "LEGO conversion queued"}
           </h2>
           <p className="mt-3 text-sm leading-6 text-slate-300">
             {legoModel
               ? `${legoModel.dimensions.width}×${legoModel.dimensions.height}×${legoModel.dimensions.depth} studs.`
-              : "Greedy brick packing runs layer-by-layer after voxelization."}
+              : "Arrr, forge the LEGO bricks and bring yer creation to life, ye crafty builder of the seas!"}
           </p>
 
           {parts.length > 0 && (
-            <div className="mt-4 max-h-52 overflow-y-auto rounded border border-teal-200/20 bg-teal-950/30 p-3">
-              <p className="text-xs font-semibold uppercase tracking-wider text-teal-300">Parts List</p>
+            <div className="mt-4 max-h-52 overflow-y-auto rounded border border-amber-200/20 bg-amber-950/30 p-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">Parts List</p>
               <ul className="mt-2 space-y-1">
                 {parts.map((p) => (
                   <li key={`${p.type}-${p.color_name}`} className="flex items-center gap-2 text-xs text-slate-300">
@@ -434,7 +434,7 @@ function LegoBay({ legoModel, run }) {
                     />
                     <span className="font-medium text-slate-100">{p.type}</span>
                     <span className="text-slate-400">{p.color_name}</span>
-                    <span className="ml-auto font-mono text-teal-200">×{p.count}</span>
+                    <span className="ml-auto font-mono text-amber-300">×{p.count}</span>
                   </li>
                 ))}
               </ul>
@@ -442,7 +442,7 @@ function LegoBay({ legoModel, run }) {
           )}
         </div>
 
-        <div className="min-h-72 rounded-md border border-cyan-200/20 bg-[#031318] bg-scan-lines [background-size:28px_28px] p-1">
+        <div className="min-h-72 rounded-md border border-amber-200/20 bg-[#140c04] bg-scan-lines [background-size:28px_28px] p-1">
           {legoModel ? (
             <div className="h-72">
               <LegoModelViewer model={legoModel} />
@@ -457,7 +457,7 @@ function LegoBay({ legoModel, run }) {
                       ? "border-rose-200/50 bg-rose-300/20"
                       : index % 4 === 0
                         ? "border-cyan-200/50 bg-cyan-300/20"
-                        : "border-teal-200/25 bg-teal-300/10"
+                        : "border-amber-200/25 bg-amber-300/10"
                   }`}
                 />
               ))}
@@ -499,21 +499,21 @@ function PipelinePanel({ run, stage, isUploading }) {
   }
 
   return (
-    <aside className="rounded-md border border-teal-200/15 bg-[#04181f]/85 p-5 shadow-abyss backdrop-blur">
-      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-teal-200">Processing Current</p>
-      <h2 className="mt-2 text-2xl font-bold text-white">Pipeline placeholders are surfaced early.</h2>
+    <aside className="rounded-md border border-amber-200/15 bg-[#190d04]/85 p-5 shadow-abyss backdrop-blur">
+      <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-300">Processing Current</p>
+      <h2 className="mt-2 text-2xl font-bold text-white">Pipeline beneath the waves</h2>
       <div className="mt-6 space-y-3">
         {steps.map((step, index) => {
           const status = getStepStatus(index);
           return (
-            <div key={step} className="flex items-center gap-3 rounded-md border border-cyan-100/10 bg-[#061f27] p-3">
+            <div key={step} className="flex items-center gap-3 rounded-md border border-amber-100/10 bg-[#1a0e05] p-3">
               <div
                 className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-md text-sm font-black ${
                   status === "completed"
                     ? "bg-emerald-300 text-emerald-950"
                     : status === "in-progress"
                       ? "bg-amber-300 text-amber-950"
-                      : "bg-cyan-950 text-cyan-100"
+                      : "bg-amber-950 text-amber-100"
                 }`}
               >
                 {index + 1}
@@ -534,24 +534,24 @@ function PipelinePanel({ run, stage, isUploading }) {
 
 // ── Upload panel ──────────────────────────────────────────────────────────────
 
-function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, onRemove, onUpload, previews, run, stage }) {
+function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, onRemove, onUpload, previews, stage }) {
   return (
-    <section className="rounded-md border border-cyan-200/20 bg-[#06202a]/85 p-5 shadow-abyss backdrop-blur">
+    <section className="rounded-md border border-amber-200/20 bg-[#1c0f05]/85 p-5 shadow-abyss backdrop-blur">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-cyan-200">Upload Pictures</p>
-          <h2 className="mt-2 text-2xl font-bold text-white">Send 4-8 object photos below deck.</h2>
+          <p className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-300">Upload Pictures</p>
+          <h2 className="mt-2 text-2xl font-bold text-white">Stow away 8–16 images o’ yer object below deck</h2>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
-            Choose JPG, PNG, or WebP images from different angles. The API stores the originals in MongoDB GridFS.
+            Hoist yer camera, matey, and gather yer images in JPG, PNG, HEIC, or WebP from all around the booty! For the finest plunder, snap 8 shots level with the object, turnin’ it 45° each time, then climb above and take 8 more from on high at the same bearings.
           </p>
         </div>
-        <div className="rounded-md border border-teal-200/20 bg-teal-900/30 px-3 py-2 text-sm text-teal-50">
+        <div className="rounded-md border border-amber-200/20 bg-amber-900/20 px-3 py-2 text-sm text-amber-50">
           {files.length}/{MAX_IMAGES} selected
         </div>
       </div>
 
       <button
-        className="mt-6 flex min-h-44 w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-cyan-100/45 bg-[#03151d]/80 px-5 py-8 text-center transition hover:border-cyan-100 hover:bg-[#062533] focus:outline-none focus:ring-2 focus:ring-cyan-200"
+        className="mt-6 flex min-h-44 w-full cursor-pointer flex-col items-center justify-center rounded-md border border-dashed border-amber-100/45 bg-[#140c04]/80 px-5 py-8 text-center transition hover:border-amber-300 hover:bg-[#1c1004] focus:outline-none focus:ring-2 focus:ring-amber-300"
         onClick={() => inputRef.current?.click()}
         onDragOver={(event) => event.preventDefault()}
         onDrop={(event) => {
@@ -561,7 +561,6 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
         type="button"
       >
         <span className="text-lg font-semibold text-white">Drop images here or browse</span>
-        <span className="mt-2 text-sm text-slate-300">One upload creates a new processing run.</span>
       </button>
 
       <input
@@ -582,7 +581,7 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
       {previews.length > 0 && (
         <div className="mt-5 grid grid-cols-2 gap-3 sm:grid-cols-4">
           {previews.map(({ file, url }, index) => (
-            <figure key={`${file.name}-${file.lastModified}`} className="relative rounded-md border border-cyan-100/15 bg-[#031318] p-2">
+            <figure key={`${file.name}-${file.lastModified}`} className="relative rounded-md border border-amber-100/15 bg-[#140c04] p-2">
               <button
                 type="button"
                 onClick={() => onRemove(index)}
@@ -599,9 +598,9 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
         </div>
       )}
 
-      <div className="mt-5 flex flex-wrap items-center gap-3">
+      <div className="mt-5 flex justify-center">
         <button
-          className="rounded-md bg-cyan-300 px-5 py-3 text-sm font-bold text-[#031318] transition hover:bg-cyan-200 disabled:cursor-not-allowed disabled:bg-slate-500 disabled:text-slate-200"
+          className="w-full rounded-md bg-amber-400 px-5 py-3 text-sm font-bold text-[#140c04] transition hover:bg-amber-300 disabled:cursor-not-allowed disabled:bg-slate-600 disabled:text-slate-300"
           disabled={!canUpload}
           onClick={onUpload}
           type="button"
@@ -610,12 +609,6 @@ function UploadPanel({ canUpload, error, files, inputRef, isUploading, onFiles, 
         </button>
       </div>
 
-      {run && (
-        <div className="mt-5 rounded-md border border-emerald-200/30 bg-emerald-950/35 p-4 text-sm text-emerald-50">
-          <p className="font-semibold">Run created: {run.run_id}</p>
-          <p className="mt-1 text-emerald-100/80">{run.images?.length ?? 0} images stored in the database.</p>
-        </div>
-      )}
     </section>
   );
 }
@@ -751,20 +744,21 @@ function App() {
   }
 
   return (
-    <main className="min-h-screen bg-[#041016] text-slate-50">
+    <main className="min-h-screen bg-[#0d0702] text-slate-50">
       <section className="relative isolate overflow-hidden">
         <img
-          src="/deep-sea-banner.png"
-          alt="Deep ocean with bioluminescent light"
-          className="absolute inset-0 -z-20 h-full w-full object-cover opacity-60"
+          src="/pirate-ship-10061128_640.webp"
+          alt="Pirate ship"
+          className="absolute inset-0 -z-20 mx-auto h-full w-auto max-w-none object-contain opacity-20"
+          style={{ left: "50%", transform: "translateX(-50%)" }}
         />
-        <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(4,16,22,0.55),#041016_78%)]" />
+        <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(13,7,2,0.45),#0d0702_85%)]" />
         <div className="mx-auto flex min-h-[42rem] max-w-7xl flex-col px-5 py-8 sm:px-8 lg:px-10">
           <header className="flex items-center justify-between gap-4">
             <div>
-              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-cyan-200">Bricked</p>
+              <p className="text-sm font-semibold uppercase tracking-[0.22em] text-amber-300">Bricked</p>
               <h1 className="mt-3 max-w-4xl text-4xl font-black leading-tight text-white sm:text-6xl">
-                Build a brick-ready model from a ring of photos.
+                Flick it & Brick it
               </h1>
             </div>
           </header>

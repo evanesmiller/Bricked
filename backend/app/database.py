@@ -1,3 +1,4 @@
+import certifi
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorGridFSBucket
 from app.config import MONGO_URI, MONGO_DB
 
@@ -8,7 +9,7 @@ gridfs_bucket: AsyncIOMotorGridFSBucket = None
 
 async def connect_db():
     global client, db, gridfs_bucket
-    client = AsyncIOMotorClient(MONGO_URI)
+    client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
     db = client[MONGO_DB]
     gridfs_bucket = AsyncIOMotorGridFSBucket(db, bucket_name="images")
 
