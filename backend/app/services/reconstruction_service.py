@@ -20,7 +20,7 @@ import cv2
 import numpy as np
 from bson import ObjectId
 from fastapi import HTTPException
-from scipy.ndimage import label as nd_label, binary_erosion
+from scipy.ndimage import label as nd_label
 
 from app.database import get_db, get_gridfs
 
@@ -28,16 +28,20 @@ logger = logging.getLogger(__name__)
 
 # ── Carving parameters ────────────────────────────────────────────────────────
 
-GRID_SIZE        = 64    # Voxel grid resolution (N³)
+GRID_SIZE        = 256   # Voxel grid resolution (N³)
 CAMERA_DISTANCE  = 3.0   # Distance from camera to object origin; object spans [-1,1]³
 CAMERA_ELEVATION = 0.3   # Radians (~17°) — cameras tilt slightly downward
 
 # Silhouette normalisation — each raw mask is cropped to its bounding box,
 # padded, and resized to a square before projection.  The focal length is then
 # derived analytically so the ±1 world extent maps to the padded boundary.
-NORM_SIZE        = 256   # Normalised silhouette side length in pixels
+NORM_SIZE        = 512   # Normalised silhouette side length in pixels (2× grid for sub-voxel accuracy)
 NORM_PAD         = 0.10  # Fractional padding added around the bounding box
-DILATION_PX      = 10    # Extra dilation on the normalised mask (error margin)
+DILATION_PX      = 3     # Extra dilation on the normalised mask (error margin)
+THIN_OPEN_PX     = 4     # Opening kernel radius to disconnect thin protrusions (straws, stems)
+
+# Chunked projection keeps peak RAM under ~400 MB at 256³ (16 M voxels × 3 × 4 B = 192 MB base)
+_PROJ_CHUNK      = 4_000_000
 
 # A voxel is kept when it lies inside at least this fraction of views.
 # Higher = tighter hull, lower = more tolerant of camera model errors.
@@ -102,14 +106,15 @@ def _build_camera(
 
 def _normalize_silhouette(
     mask: np.ndarray,
-    out_size: int  = NORM_SIZE,
-    pad_frac: float = NORM_PAD,
+    out_size: int    = NORM_SIZE,
+    pad_frac: float  = NORM_PAD,
     dilation_px: int = DILATION_PX,
+    open_px: int     = THIN_OPEN_PX,
 ) -> np.ndarray:
     """
     Crop to the object bounding box, add padding, resize to a square, then
-    dilate. This removes the dependency on camera distance / zoom level and
-    gives a tolerance margin for projection errors.
+    optionally apply opening to remove thin protrusions (straws, stems), and
+    finally dilate for a tolerance margin.
     """
     rows = np.any(mask, axis=1)
     cols = np.any(mask, axis=0)
@@ -136,6 +141,20 @@ def _normalize_silhouette(
         return np.zeros((out_size, out_size), dtype=np.uint8)
 
     normed = cv2.resize(cropped, (out_size, out_size), interpolation=cv2.INTER_NEAREST)
+
+    # Remove thin protrusions (straws, stems) via opening then keep largest component.
+    # This prevents inconsistent straw positions across views from warping the hull.
+    if open_px > 0:
+        k_open = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (open_px * 2 + 1,) * 2)
+        opened = cv2.morphologyEx(normed, cv2.MORPH_OPEN, k_open)
+        if opened.any():
+            n_comp, labels = cv2.connectedComponents(opened.astype(np.uint8))
+            if n_comp > 1:
+                sizes   = np.bincount(labels.ravel())[1:]
+                largest = int(np.argmax(sizes)) + 1
+                normed  = (labels == largest).astype(np.uint8)
+            else:
+                normed = opened
 
     if dilation_px > 0:
         kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (dilation_px * 2 + 1,) * 2)
@@ -178,8 +197,9 @@ def _visual_hull_carving(
     gx, gy, gz = np.meshgrid(coords, coords, coords, indexing="ij")
     pts_world = np.stack([gx.ravel(), gy.ravel(), gz.ravel()], axis=1).astype(np.float32)
 
-    votes  = np.zeros(grid_size ** 3, dtype=np.int32)
-    angles = np.linspace(0.0, 2.0 * np.pi, n_views, endpoint=False)
+    n_total = pts_world.shape[0]
+    votes   = np.zeros(n_total, dtype=np.int32)
+    angles  = np.linspace(0.0, 2.0 * np.pi, n_views, endpoint=False)
 
     for i, angle in enumerate(angles):
         sil = _normalize_silhouette(silhouettes[i])
@@ -189,26 +209,31 @@ def _visual_hull_carving(
         R = R.astype(np.float32)
         t = t.astype(np.float32)
 
-        pts_cam = (R @ pts_world.T).T + t
-        z        = pts_cam[:, 2]
-        in_front = z > 1e-4
+        # Process in chunks to cap peak RAM at ~400 MB for 256³ grids
+        for start in range(0, n_total, _PROJ_CHUNK):
+            end   = min(start + _PROJ_CHUNK, n_total)
+            chunk = pts_world[start:end]              # view — no allocation
 
-        safe_z = np.where(in_front, z, 1.0)
-        px = f_eff * pts_cam[:, 0] / safe_z + cx
-        py = f_eff * pts_cam[:, 1] / safe_z + cy
+            pts_cam  = chunk @ R.T + t                # (C, 3)
+            z        = pts_cam[:, 2]
+            in_front = z > 1e-4
 
-        px_i = np.round(px).astype(np.int32)
-        py_i = np.round(py).astype(np.int32)
+            safe_z = np.where(in_front, z, 1.0)
+            px = f_eff * pts_cam[:, 0] / safe_z + cx
+            py = f_eff * pts_cam[:, 1] / safe_z + cy
 
-        in_bounds = in_front & (px_i >= 0) & (px_i < w) & (py_i >= 0) & (py_i < h)
+            px_i = np.round(px).astype(np.int32)
+            py_i = np.round(py).astype(np.int32)
 
-        in_sil = np.zeros(len(pts_world), dtype=bool)
-        idx = np.where(in_bounds)[0]
-        if idx.size:
-            in_sil[idx] = sil[py_i[idx], px_i[idx]] > 0
+            in_bounds = in_front & (px_i >= 0) & (px_i < w) & (py_i >= 0) & (py_i < h)
 
-        # Behind-camera voxels abstain (counted as passing this view)
-        votes += (in_sil | ~in_front).astype(np.int32)
+            in_sil = np.zeros(end - start, dtype=bool)
+            idx    = np.where(in_bounds)[0]
+            if idx.size:
+                in_sil[idx] = sil[py_i[idx], px_i[idx]] > 0
+
+            # Behind-camera voxels abstain (counted as passing this view)
+            votes[start:end] += (in_sil | ~in_front).astype(np.int32)
 
     min_votes    = max(1, int(np.ceil(n_views * MIN_VOTE_FRAC)))
     occupied_3d  = (votes >= min_votes).reshape(grid_size, grid_size, grid_size)
@@ -218,7 +243,7 @@ def _visual_hull_carving(
     # single largest contiguous region (the actual object) is retained.
     labeled, n_components = nd_label(occupied_3d)
     if n_components == 0:
-        return pts_world[np.zeros(grid_size**3, dtype=bool)]
+        return pts_world[np.zeros(n_total, dtype=bool)]
     if n_components > 1:
         sizes         = np.bincount(labeled.ravel())[1:]   # component sizes (skip bg=0)
         largest_label = int(np.argmax(sizes)) + 1
@@ -230,9 +255,6 @@ def _visual_hull_carving(
             sizes[largest_label - 1],
             sizes.sum() - sizes[largest_label - 1],
         )
-
-    # ── Single-voxel erosion to remove thin surface noise ────────────────────
-    occupied_3d = binary_erosion(occupied_3d).astype(bool)
 
     return pts_world[occupied_3d.ravel()]
 
@@ -298,7 +320,7 @@ async def run_reconstruction(run_id: str) -> dict:
         logger.info("Visual hull: %d occupied voxels for run %s", pts.shape[0], run_id)
 
         # Serialise point cloud
-        point_list   = [{"x": float(p[0]), "y": float(p[1]), "z": float(p[2])} for p in pts]
+        point_list   = [{"x": -float(p[0]), "y": -float(p[1]), "z": float(p[2])} for p in pts]
         pts_bytes    = json.dumps(point_list).encode()
 
         cloud_id = await fs.upload_from_stream(

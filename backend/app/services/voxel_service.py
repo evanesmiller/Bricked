@@ -52,9 +52,9 @@ logger = logging.getLogger(__name__)
 #
 # OPEN_ITERS=1 removes thin silhouette fins that the Gaussian pass may leave.
 
-VOXEL_SIZE   = 0.12   # world units in [-1, 1]³  →  ~17 voxels per axis
-GAUSS_SIGMA  = 1.0    # smoothing radius in voxels
-GAUSS_THRESH = 0.40   # re-binarisation threshold after smoothing
+VOXEL_SIZE   = 0.07   # world units in [-1, 1]³  →  ~29 voxels per axis
+GAUSS_SIGMA  = 0.5    # smoothing radius in voxels
+GAUSS_THRESH = 0.45   # re-binarisation threshold after smoothing
 OPEN_ITERS   = 1      # morphological opening iterations (fin removal)
 
 

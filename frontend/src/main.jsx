@@ -107,7 +107,7 @@ function PointCloudViewer({ points }) {
     const geo = new THREE.BufferGeometry();
     geo.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geo.setAttribute("color",    new THREE.BufferAttribute(colors,    3));
-    const mat   = new THREE.PointsMaterial({ size: 0.05, vertexColors: true, sizeAttenuation: true });
+    const mat   = new THREE.PointsMaterial({ size: 0.02, vertexColors: true, sizeAttenuation: true });
     scene.add(new THREE.Points(geo, mat));
 
     return () => dispose([geo, mat]);
