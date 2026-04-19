@@ -33,7 +33,7 @@ CONF_RETRY     = 0.10   # fallback threshold if nothing found at CONF_THRESHOLD
 # A well-segmented object should fill a meaningful but not total fraction of
 # its own bounding box.  Values outside this range indicate either a shredded
 # mask (too low) or a flood-fill that captured the background (too high).
-MIN_FILL_RATIO = 0.75   # below → mask too sparse / object not covered
+MIN_FILL_RATIO = 0.4   # below → mask too sparse / object not covered
 MAX_FILL_RATIO = 0.98   # above → mask swallowed the whole bbox region
 
 
